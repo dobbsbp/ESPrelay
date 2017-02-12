@@ -1,15 +1,17 @@
 #include <ESP8266WiFi.h>
 
+
 const char* ssid = "Lampu";  // name for ssid
-const char* password = "babyzita";
+const char* password = "iottest1";
 
 int ledPin = D7; // GPIO7
 WiFiServer server(15151);
+//IPAddress ip(192, 168, 0, 177);
 
 void setup() {
   Serial.begin(115200);
   delay(10);
-
+WiFi.softAP(ssid, password);
 
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
@@ -20,14 +22,16 @@ void setup() {
   Serial.print("Connecting to ");
   Serial.println(ssid);
 
-  WiFi.ap(ssid, password);
+//  WiFi.mode(WIFI_AP);
+  //WiFi.softAP(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
+  //while (WiFi.status() != WL_CONNECTED) {
+  //  delay(20);
+    //Serial.print(".");
+  //}
   Serial.println("");
   Serial.println("WiFi connected");
+
 
   // Start the server
   server.begin();
