@@ -1,45 +1,86 @@
-#The relay/ap
+# Begin configuration
+TITLE    = "Relay Status"
+GPIO_NUM = 16
+# End configuration
 
-import machine
 import network
+import machine
+import usocket
 
+ap = network.WLAN(network.AP_IF)
+sta_if = network.WLAN(network.STA_IF)
+ap_if = network.WLAN(network.AP_IF)
 
-#network first
-ap.config(essid='SuperMassive', authmode=network.AUTH_WPA_WPA2_PSK, password="BlackHole")
+sta_if.active()
+ap_if.active()
 
-#webserver second. Displays pin outputs
-pins = [machine.Pin(i, machine.Pin.IN) for i in (0, 2, 4, 5, 12, 13, 14, 15)]
+ap_if.config(essid='SuperMassive', authmode=network.AUTH_WPA_WPA2_PSK, password="BlackHole")
 
-html = """<!DOCTYPE html>
-<html>
-    <head> <title>ESP8266 Pins</title> </head>
-    <body> <h1>ESP8266 Pins</h1>
-        <table border="1"> <tr><th>Pin</th><th>Value</th></tr> %s </table>
-    </body>
-</html>
-"""
+pin = machine.Pin(GPIO_NUM)
+pin.init(pin.OUT)
 
-#Listening for get requests i guess
-import socket
-addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+def ok(socket, query):
+    socket.write("HTTP/1.1 OK\r\n\r\n")
+    socket.write("<!DOCTYPE html><title>"+TITLE+"</title><body>")
+    socket.write(TITLE+" status: ")
+    if pin.value():
+        socket.write("<span style='color:green'>ON</span>")
+    else:
+        socket.write("<span style='color:red'>OFF</span>")
+    socket.write("<br>")
+    if pin.value():
+        socket.write("<form method='POST' action='/off?"+query.decode()+"'>"+
+                     "<input type='submit' value='turn OFF'>"+
+                     "</form>")
+    else:
+        socket.write("<form method='POST' action='/on?"+query.decode()+"'>"+
+                     "<input type='submit' value='turn ON'>"+
+                     "</form>")
 
-s = socket.socket()
-s.bind(addr)
-s.listen(1)
+def err(socket, code, message):
+    socket.write("HTTP/1.1 "+code+" "+message+"\r\n\r\n")
+    socket.write("<h1>"+message+"</h1>")
 
-print('listening on', addr)
-
-while True:
-    cl, addr = s.accept()
-    print('client connected from', addr)
-    cl_file = cl.makefile('rwb', 0)
+def handle(socket):
+    (method, url, version) = socket.readline().split(b" ")
+    if b"?" in url:
+        (path, query) = url.split(b"?", 2)
+    else:
+        (path, query) = (url, b"")
     while True:
-        line = cl_file.readline()
-        if not line or line == b'\r\n':
+        header = socket.readline()
+        if header == b"":
+            return
+        if header == b"\r\n":
             break
-    rows = ['<tr><td>%s</td><td>%d</td></tr>' % (str(p), p.value()) for p in pins]
-    response = html % '\n'.join(rows)
-    cl.send(response)
-    cl.close()
 
-#omg im so lost
+    if version != b"HTTP/1.0\r\n" and version != b"HTTP/1.1\r\n":
+        err(socket, "505", "Version Not Supported")
+    elif method == b"GET":
+        if path == b"/":
+            ok(socket, query)
+        else:
+            err(socket, "404", "Not Found")
+    elif method == b"POST":
+        if path == b"/on":
+            pin.high()
+            ok(socket, query)
+        elif path == b"/off":
+            pin.low()
+            ok(socket, query)
+        else:
+            err(socket, "404", "Not Found")
+    else:
+        err(socket, "501", "Not Implemented")
+
+server = usocket.socket()
+server.bind(('0.0.0.0', 80))
+server.listen(1)
+while True:
+    try:
+        (socket, sockaddr) = server.accept()
+        handle(socket)
+    except:
+        socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n")
+        socket.write("<h1>Internal Server Error</h1>")
+    socket.close()
